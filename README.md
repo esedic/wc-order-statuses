@@ -43,3 +43,13 @@ flowchart LR
 | cancelled | `wc-cancelled` | Cancelled by an admin or hold-stock timeout |
 | refunded | `wc-refunded` | Full refund recorded |
 | checkout-draft | `wc-checkout-draft` | Unfinished Checkout block order |
+
+Three different actors move orders:
+
+**The gateway.** An online gateway creates the order as pending, sends the shopper away, then calls WC_Order::payment_complete() when its callback, webhook or IPN confirms the money. That method does not hardcode processing — it asks the order whether anything in it needs human handling. If every line item is both virtual and downloadable, the order goes straight to completed and the download links are released; otherwise it goes to processing. This is why a store selling only digital goods never sees processing, and a store that added one shippable item to a digital bundle suddenly does.
+
+**Offline gateways.** Direct bank transfer, cheque and cash on delivery cannot confirm anything, so they set a status by hand at checkout. Bank transfer and cheque set on-hold, which reduces stock and waits for you to confirm the money arrived. Cash on delivery sets processing — unless the order contains a downloadable item, in which case it sets on-hold so the files are not released before payment. That single branch explains most “why is COD sometimes on-hold” tickets.
+
+**You, in the admin.** Changing the status in the order screen or with a bulk action fires exactly the same transition hooks a gateway would, so it triggers the same emails and the same stock movements. There is no “quiet” manual change.
+
+Stock follows the status, not the cart. WooCommerce reduces stock when an order reaches on-hold, processing or completed, and puts it back when an order moves to cancelled or back to pending. A meta flag records that reduction so a processing to completed move does not decrement twice. The corollary matters: an order sitting in pending is holding no stock at all beyond the short-lived reservation row, which is the mechanism behind oversell race conditions.
